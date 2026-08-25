@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Course Deliverables</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --col-bg: #181c26;
+    --card-bg: #232937;
+    --card-hover: #2b3245;
+    --text: #e8eaf0;
+    --muted: #8b93a7;
+    --accent: #6c8cff;
+    --todo: #6c8cff;
+    --prog: #f5a623;
+    --done: #3ecf8e;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    padding: 16px;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 1100px; margin: 0 auto 16px;
+  }
+  h1 { font-size: 20px; font-weight: 700; }
+  h1 span { color: var(--accent); }
+  #sync { font-size: 12px; color: var(--muted); }
+  .add-bar {
+    display: flex; gap: 8px; max-width: 1100px; margin: 0 auto 16px;
+  }
+  .add-bar input {
+    flex: 1; background: var(--col-bg); border: 1px solid #2a3040; color: var(--text);
+    border-radius: var(--radius); padding: 12px 14px; font-size: 15px; outline: none;
+  }
+  .add-bar input:focus { border-color: var(--accent); }
+  .add-bar button {
+    background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
+    padding: 0 20px; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .board {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    max-width: 1100px; margin: 0 auto;
+  }
+  @media (max-width: 720px) {
+    .board { grid-template-columns: 1fr; }
+  }
+  .col {
+    background: var(--col-bg); border-radius: var(--radius); padding: 12px;
+    min-height: 120px;
+  }
+  .col h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .col h2 .count {
+    background: var(--card-bg); border-radius: 10px; padding: 1px 8px;
+    font-size: 12px; color: var(--muted);
+  }
+  .col[data-col="todo"] h2 { color: var(--todo); }
+  .col[data-col="inprogress"] h2 { color: var(--prog); }
+  .col[data-col="done"] h2 { color: var(--done); }
+  .cards { min-height: 60px; display: flex; flex-direction: column; gap: 8px; }
+  .card {
+    background: var(--card-bg); border-radius: 10px; padding: 12px;
+    font-size: 15px; line-height: 1.35; cursor: grab; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid transparent;
+  }
+  .card:hover { background: var(--card-hover); }
+  .card.dragging { opacity: 0.4; }
+  .col.dragover .cards { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
+  .card .txt { flex: 1; word-break: break-word; }
+  .col[data-col="done"] .card .txt { text-decoration: line-through; color: var(--muted); }
+  .card .btns { display: flex; gap: 4px; flex-shrink: 0; }
+  .card button {
+    background: #313952; color: var(--text); border: none; border-radius: 8px;
+    width: 34px; height: 34px; font-size: 16px; cursor: pointer;
+  }
+  .card button:active { background: var(--accent); }
+  .card button.del { background: transparent; color: var(--muted); font-size: 14px; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Course <span>Deliverables</span></h1>
+  <div id="sync">syncing…</div>
+</header>
+
+<div class="add-bar">
+  <input id="newCard" type="text" placeholder="Add a deliverable…" autocomplete="off">
+  <button onclick="addCard()">Add</button>
+</div>
+
+<div class="board">
+  <div class="col" data-col="todo"><h2>📋 To Do <span class="count"></span></h2><div class="cards"></div></div>
+  <div class="col" data-col="inprogress"><h2>⚡ In Progress <span class="count"></span></h2><div class="cards"></div></div>
+  <div class="col" data-col="done"><h2>✅ Done <span class="count"></span></h2><div class="cards"></div></div>
+</div>
+
+<script>
+const COLS = ['todo', 'inprogress', 'done'];
+let board = { columns: { todo: [], inprogress: [], done: [] } };
+let dirty = false;
+let lastServerStamp = null;
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function render() {
+  COLS.forEach(col => {
+    const colEl = document.querySelector(`.col[data-col="${col}"]`);
+    const wrap = colEl.querySelector('.cards');
+    colEl.querySelector('.count').textContent = board.columns[col].length;
+    wrap.innerHTML = '';
+    if (!board.columns[col].length) {
+      wrap.innerHTML = '<div class="empty">—</div>';
+    }
+    board.columns[col].forEach(card => {
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.draggable = true;
+      el.dataset.id = card.id;
+
+      const txt = document.createElement('div');
+      txt.className = 'txt';
+      txt.textContent = card.text;
+      el.appendChild(txt);
+
+      const btns = document.createElement('div');
+      btns.className = 'btns';
+      const idx = COLS.indexOf(col);
+      if (idx > 0) {
+        const b = document.createElement('button');
+        b.textContent = '←';
+        b.onclick = () => moveCard(card.id, COLS[idx - 1]);
+        btns.appendChild(b);
+      }
+      if (idx < COLS.length - 1) {
+        const b = document.createElement('button');
+        b.textContent = '→';
+        b.onclick = () => moveCard(card.id, COLS[idx + 1]);
+        btns.appendChild(b);
+      }
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.textContent = '✕';
+      del.onclick = () => { if (confirm('Delete "' + card.text + '"?')) deleteCard(card.id); };
+      btns.appendChild(del);
+      el.appendChild(btns);
+
+      el.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', card.id);
+        el.classList.add('dragging');
+      });
+      el.addEventListener('dragend', () => el.classList.remove('dragging'));
+
+      wrap.appendChild(el);
+    });
+  });
+}
+
+document.querySelectorAll('.col').forEach(colEl => {
+  colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.classList.add('dragover'); });
+  colEl.addEventListener('dragleave', () => colEl.classList.remove('dragover'));
+  colEl.addEventListener('drop', e => {
+    e.preventDefault();
+    colEl.classList.remove('dragover');
+    moveCard(e.dataTransfer.getData('text/plain'), colEl.dataset.col);
+  });
+});
+
+function findCard(id) {
+  for (const col of COLS) {
+    const i = board.columns[col].findIndex(c => c.id === id);
+    if (i !== -1) return { col, i };
+  }
+  return null;
+}
+
+function moveCard(id, toCol) {
+  const loc = findCard(id);
+  if (!loc || loc.col === toCol) return;
+  const [card] = board.columns[loc.col].splice(loc.i, 1);
+  board.columns[toCol].push(card);
+  dirty = true;
+  render();
+  push();
+}
+
+function deleteCard(id) {
+  const loc = findCard(id);
+  if (!loc) return;
+  board.columns[loc.col].splice(loc.i, 1);
+  dirty = true;
+  render();
+  push();
+}
+
+function addCard() {
+  const inp = document.getElementById('newCard');
+  const text = inp.value.trim();
+  if (!text) return;
+  board.columns.todo.push({ id: uid(), text });
+  inp.value = '';
+  dirty = true;
+  render();
+  push();
+}
+document.getElementById('newCard').addEventListener('keydown', e => { if (e.key === 'Enter') addCard(); });
+
+async function push() {
+  try {
+    const r = await fetch('/api/board', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(board),
+    });
+    if (r.ok) {
+      const b = await r.json();
+      lastServerStamp = b.updatedAt;
+      dirty = false;
+      setSync('saved');
+    } else setSync('save error');
+  } catch { setSync('offline'); }
+}
+
+async function pull() {
+  if (dirty) return; // don't clobber unsaved local changes
+  try {
+    const r = await fetch('/api/board');
+    if (!r.ok) return;
+    const b = await r.json();
+    if (b.updatedAt !== lastServerStamp) {
+      board = { columns: { todo: b.columns.todo || [], inprogress: b.columns.inprogress || [], done: b.columns.done || [] } };
+      lastServerStamp = b.updatedAt;
+      render();
+    }
+    setSync('live');
+  } catch { setSync('offline'); }
+}
+
+function setSync(s) {
+  document.getElementById('sync').textContent = s === 'live' ? '🟢 live' : s === 'saved' ? '🟢 saved' : '🔴 ' + s;
+}
+
+pull();
+setInterval(pull, 4000);
+</script>
+</body>
+</html>
